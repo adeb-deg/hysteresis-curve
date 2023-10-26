@@ -43,3 +43,5 @@ f_values = [ ... ]  # Array of F values
 
 curve = HysteresisCurve(d_values, f_values)
 curve.plot()
+
+![Hysteresis Curve Analysis](https://github.com/adeb-deg/hysteresis-curve/raw/main/plot_example.png)
