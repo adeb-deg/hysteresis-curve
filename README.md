@@ -7,7 +7,7 @@ This Python module provides tools for analyzing hysteresis curves using various 
     - Resample data points.
     - Estimate initial slopes.
     - Identify unloading and reloading branches.
-    - Calculate Effective Dissipation Ratio (EDR).
+    - Calculate Energy Dissipation Ratio (EDR).
     - Visualize hysteresis polygons and data plots.
     - Find intersection points and extend LineString objects.
     - Generate hysteresis polygons.
@@ -28,7 +28,7 @@ Provides methods to handle and analyze hysteresis curves.
 - `unloading_branches(self)`: Identifies the unloading branches.
 - `reloading_branches(self)`: Identifies the reloading branches.
 - `hysteresis_polygons(self)`: Generates polygons representing the hysteresis.
-- `edr(self)`: Calculates the Effective Dissipation Ratio (EDR).
+- `edr(self)`: Calculates the Energy Dissipation Ratio (EDR).
 - `plot(self, plot_cycle_num=None, **kwargs)`: Visualizes the hysteresis curve, supporting optional arguments like color and custom figure axes.
 
 ## Quick Start
