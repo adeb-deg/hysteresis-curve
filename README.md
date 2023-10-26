@@ -35,7 +35,7 @@ Provides methods to handle and analyze hysteresis curves.
 To use the functionalities provided in the module, you can start by creating an instance of the `HysteresisCurve` class with data arrays for D and F values:
 
 ```python
-from hysteresis_module import HysteresisCurve  # Assuming this module is named 'hysteresis_module.py'
+from hysteresis import HysteresisCurve  # Assuming this module is named 'hysteresis.py'
 
 # Example data
 d_values = [ ... ]  # Array of D values
