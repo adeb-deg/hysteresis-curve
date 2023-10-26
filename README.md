@@ -42,7 +42,7 @@ d_values = [ ... ]  # Array of D values
 f_values = [ ... ]  # Array of F values
 
 curve = HysteresisCurve(d_values, f_values)
-curve.plot()
+curve.plot(plot_cycle_num=-1)
 ```
 
 ![Hysteresis Curve Analysis](https://github.com/adeb-deg/hysteresis-curve/blob/main/plot_example.PNG)
