@@ -45,5 +45,5 @@ curve = HysteresisCurve(d_values, f_values)
 curve.plot(plot_cycle_num=-1)
 ```
 
-![Hysteresis Curve Analysis](https://github.com/adeb-deg/hysteresis-curve/blob/main/EDR-Ke.PNG)
+![Hysteresis Curve Analysis](https://github.com/adeb-deg/hysteresis-curve/blob/main/EDR-Ke.png)
 ![Hysteresis Curve Analysis](https://github.com/adeb-deg/hysteresis-curve/blob/main/plot_example.PNG)
