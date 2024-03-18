@@ -68,9 +68,10 @@ def resample_array(original_array, m):
 
 class HysteresisCurve:
     def __init__(self, d, f, labels=('D', 'F')):
-        self.d = d
-        self.f = f
+        self.d = np.array(d)
+        self.f = np.array(f)
         self.labels = labels
+        self.signal_width = np.max(self.d) - np.min(self.d)
 
     def resample(self, n):
         ubs = self.unloading_branches()
@@ -103,13 +104,13 @@ class HysteresisCurve:
         return m1
 
     def unloading_branches(self):
-        peaks, _ = find_peaks(self.d, prominence=0.01)
-        valleys, _ = find_peaks(-self.d, prominence=0.01)
+        peaks, _ = find_peaks(self.d)
+        valleys, _ = find_peaks(-self.d)
         return list(zip(peaks, valleys))
 
     def reloading_branches(self):
-        peaks, _ = find_peaks(self.d, prominence=0.01)
-        valleys, _ = find_peaks(-self.d, prominence=0.01)
+        peaks, _ = find_peaks(self.d)
+        valleys, _ = find_peaks(-self.d)
         peaks = peaks[1:]
         if len(peaks) == len(valleys) - 1:
             ub = self.unloading_branches()
@@ -140,8 +141,8 @@ class HysteresisCurve:
         for hyst_poly, epp_poly in polygons:
             if hyst_poly.area == 0 or epp_poly.area == 0:
                 edr.append(0.)
-            elif hyst_poly.area / epp_poly.area > 1:
-                edr.append(0.)
+            # elif hyst_poly.area / epp_poly.area > 1:
+            #     edr.append(0.)
             else:
                 edr.append(hyst_poly.area / epp_poly.area)
         return np.array(edr)
@@ -173,31 +174,36 @@ class HysteresisCurve:
             ml.set_markerfacecolor(color + (alpha,))
             sl.set_color(color + (alpha,))
             bl.set_color(color + (alpha,))
-            axs[-1].set_ylim(-0.1, 1.)
+            axs[-1].set_ylim(-0.1, np.maximum(1., 1.1 * np.max(edr)))
 
         if plot_cycle_num is not None:
-            try:
-                polygons = self.hysteresis_polygons()
-                hyst_polygon = mplPolygon(np.array(polygons[plot_cycle_num][0].exterior.coords), closed=True, facecolor='red',
-                                          edgecolor='none', alpha=0.25)
-                epp_polygon = mplPolygon(np.array(polygons[plot_cycle_num][1].exterior.coords), closed=True, facecolor='none',
-                                         edgecolor='k', alpha=0.5)
-                axs[0].add_patch(hyst_polygon)
-                axs[0].add_patch(epp_polygon)
-                # ub = self.unloading_branches()
-                # rb = self.reloading_branches()
-                # axs[1].plot(np.arange(*ub[plot_cycle_num]), self.d[ub[plot_cycle_num][0]:ub[plot_cycle_num][1]], 'r')
-                # axs[1].plot(np.arange(*rb[plot_cycle_num]), self.d[rb[plot_cycle_num][0]:rb[plot_cycle_num][1]], 'r')
-                ml, sl, bl = axs[-1].stem(cycles[plot_cycle_num], [edr[plot_cycle_num]])
-                ml.set_markeredgecolor("none")
-                ml.set_markerfacecolor(color + (1.,))
-                ml.set_marker('*')
-                ml.set_markersize(20)
-                sl.set_color(color + (1.,))
-                bl.set_color(color + (1.,))
+            if np.isscalar(plot_cycle_num):
+                plot_cycle_num_list = [plot_cycle_num]
+            else:
+                plot_cycle_num_list = plot_cycle_num
+            for plot_cycle_num in plot_cycle_num_list:
+                try:
+                    polygons = self.hysteresis_polygons()
+                    hyst_polygon = mplPolygon(np.array(polygons[plot_cycle_num][0].exterior.coords), closed=True, facecolor='red',
+                                              edgecolor='none', alpha=0.25)
+                    epp_polygon = mplPolygon(np.array(polygons[plot_cycle_num][1].exterior.coords), closed=True, facecolor='none',
+                                             edgecolor='k', alpha=0.5)
+                    axs[0].add_patch(hyst_polygon)
+                    axs[0].add_patch(epp_polygon)
+                    # ub = self.unloading_branches()
+                    # rb = self.reloading_branches()
+                    # axs[1].plot(np.arange(*ub[plot_cycle_num]), self.d[ub[plot_cycle_num][0]:ub[plot_cycle_num][1]], 'r')
+                    # axs[1].plot(np.arange(*rb[plot_cycle_num]), self.d[rb[plot_cycle_num][0]:rb[plot_cycle_num][1]], 'r')
+                    ml, sl, bl = axs[-1].stem(cycles[plot_cycle_num], [edr[plot_cycle_num]])
+                    ml.set_markeredgecolor("none")
+                    ml.set_markerfacecolor(color + (1.,))
+                    ml.set_marker('*')
+                    ml.set_markersize(20)
+                    sl.set_color(color + (1.,))
+                    bl.set_color(color + (1.,))
 
-            except IndexError:
-                pass
+                except IndexError:
+                    continue
 
         if plot_env:
             d_e = np.linspace(min(self.d), max(self.d), 100)
