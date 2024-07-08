@@ -4,13 +4,10 @@ This Python module provides tools for analyzing hysteresis curves using various 
 
 ## Features
 - Generate and analyze hysteresis curves with functionalities to:
-    - Resample data points.
-    - Estimate initial slopes.
-    - Identify unloading and reloading branches.
+    - Identify unloading and reloading branches
     - Calculate Energy Dissipation Ratio (EDR), κ<sub>e</sub>
-    - Visualize hysteresis polygons and data plots.
-    - Find intersection points and extend LineString objects.
-    - Generate hysteresis polygons.
+    - Generate piecewise linear envelope
+    - Generate and visualize hysteresis polygons
 
 ## Dependencies
 - `numpy`
@@ -23,7 +20,9 @@ This Python module provides tools for analyzing hysteresis curves using various 
 Provides methods to handle and analyze hysteresis curves.
 
 ## Methods
-- `__init__(self, d, f, n_seg_env, labels=('D', 'F'))`: Constructor method to initialize the curve with d and f arrays.
+- `__init__(self, d, f, n_seg_env, labels=('D', 'F'), prominence=None)`: Constructor method to initialize the curve with d and f arrays.
+- `find_peaks_and_valleys(self, prominence=None)`: Find peaks and valleys in the displacement signal with provided `prominence`. If `prominence` = `None`, then `self.prominence` is used.
+- `see_peaks_and_valleys(self, prominence)`: Visualize peaks and valleys in the displacement signal with provided `prominence`.
 - `resample(self, n)`: Resamples the data points of the curve to have specified number of points in each unloading/reloading branch (Total number of points in 1 cycle = 2 * n).
 - `get_init_slope_estimate(self)`: Estimates the initial slope.
 - `unloading_branches(self)`: Identifies the unloading branches.
@@ -31,6 +30,7 @@ Provides methods to handle and analyze hysteresis curves.
 - `hysteresis_polygons(self)`: Generates polygons representing the hysteresis.
 - `edr(self)`: Calculates the Energy Dissipation Ratio (EDR).
 - `plot(self, plot_cycle_num=None, **kwargs)`: Visualizes the hysteresis curve, supporting optional arguments like color and whether or not to plot envelope.
+- `get_env_params(self)`: Fit piecewise linear envelope to data and return params ```[*brkpoints, *slopes]```
 
 ## Quick Start
 To use the functionalities provided in the module, you can start by creating an instance of the `HysteresisCurve` class with data arrays for D and F values.

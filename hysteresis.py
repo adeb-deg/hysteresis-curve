@@ -121,7 +121,7 @@ def resample_array(original_array, m):
 class HysteresisCurve:
     def __init__(self, d, f, n_seg_env, **kwargs):
         """
-        :param d: displacement history (positive is assumed direction of loading, and first cycle will be unloading, then loading)
+        :param d: displacement history (positive is assumed direction of loading, and a cycle will be unloading, then loading)
         :param f: force history
         :param n_seg_env: number of piecewise linear segments in positive f-d envelope
         :param kwargs:
@@ -331,85 +331,6 @@ class HysteresisCurve:
             sync_axes([axs[0], axs[2]])
         return axs
 
-    @staticmethod
-    def find_intersection(x1, y1, m1, x2, y2, m2):
-        x = (y2 - m2 * x2 - y1 + m1 * x1) / (m1 - m2)
-        y = y1 + m1 * (x - x1)
-        return x, y
-
-    @staticmethod
-    def find_other_vertices(x1, y1, x3, y3, m1, m2):
-        x2, y2 = HysteresisCurve.find_intersection(x1, y1, m2, x3, y3, m1)
-        x4, y4 = HysteresisCurve.find_intersection(x1, y1, m1, x3, y3, m2)
-        return (x2, y2), (x4, y4)
-
-    @staticmethod
-    def extend_linestring(ls, extension_distance, start):
-        if start:
-            dx = ls.coords[1][0] - ls.coords[0][0]
-            dy = ls.coords[1][1] - ls.coords[0][1]
-        else:
-            dx = ls.coords[-1][0] - ls.coords[-2][0]
-            dy = ls.coords[-1][1] - ls.coords[-2][1]
-        magnitude = (dx ** 2 + dy ** 2) ** 0.5
-        normalized_dx = dx / magnitude
-        normalized_dy = dy / magnitude
-        delta_x = extension_distance * normalized_dx
-        delta_y = extension_distance * normalized_dy
-        if start:
-            new_start_point = (ls.coords[0][0] - delta_x, ls.coords[0][1] - delta_y)
-            extended_ls = LineString([new_start_point] + list(ls.coords))
-        else:
-            new_end_point = (ls.coords[-1][0] + delta_x, ls.coords[-1][1] + delta_y)
-            extended_ls = LineString(list(ls.coords) + [new_end_point])
-        return extended_ls
-
-    @staticmethod
-    def _hysteresis_polygons(d_u, f_u, d_r, f_r, m1):
-        ind = d_r < d_u[0]
-        d_r = d_r[ind]
-        f_r = f_r[ind]
-        ucl = LineString(zip(d_u, f_u))
-        rcl = LineString(zip(d_r, f_r))
-        intersection = rcl.intersection(ucl)
-        if intersection.geom_type == 'Point':
-            d_r = np.concatenate((d_r, np.array([d_u[0]])))
-            f_r = np.concatenate((f_r, np.array([f_u[0]])))
-            ucl = LineString(zip(d_u, f_u))
-            rcl = LineString(zip(d_r, f_r))
-            intersection = rcl.intersection(ucl)
-
-        x_points = sorted(list(intersection.geoms), key=lambda p: (p.coords[0][0], p.coords[0][1]))
-        if len(x_points) > 2:
-            x_points = [x_points[0], x_points[-1]]
-        other_points = HysteresisCurve.find_other_vertices(*x_points[0].coords[0], *x_points[1].coords[0], m1, 0.)
-        epp_poly = Polygon(
-            (x_points[0].coords[0], other_points[0], x_points[1].coords[0], other_points[1], x_points[0].coords[0]))
-
-        idx_u = [np.argmin(np.linalg.norm(np.column_stack((d_u, f_u)) - point.coords[0], axis=1)) for point in x_points]
-        idx_r = [np.argmin(np.linalg.norm(np.column_stack((d_r, f_r)) - point.coords[0], axis=1)) for point in x_points]
-
-        for itr in range(len(x_points)):
-            d_u[idx_u[itr]] = x_points[itr].coords[0][0]
-            f_u[idx_u[itr]] = x_points[itr].coords[0][1]
-
-            d_r[idx_r[itr]] = x_points[itr].coords[0][0]
-            f_r[idx_r[itr]] = x_points[itr].coords[0][1]
-
-        d_u = d_u[min(idx_u):max(idx_u) + 1]
-        f_u = f_u[min(idx_u):max(idx_u) + 1]
-
-        d_r = d_r[min(idx_r):max(idx_r) + 1]
-        f_r = f_r[min(idx_r):max(idx_r) + 1]
-
-        seg1 = np.column_stack((d_u, f_u))
-        seg2 = np.column_stack((d_r[1:], f_r[1:]))
-        try:
-            hyst_poly = Polygon(np.concatenate((seg1, seg2)))
-        except ValueError:
-            hyst_poly = Polygon()
-        return hyst_poly, epp_poly
-
     def get_env_params(self):
         """
         Recommended for monotonic force-deformation
@@ -457,6 +378,64 @@ class HysteresisCurve:
                 p_list.append(temp.x)
             self.env_params = p_list[np.argmin(res_list)]
         return self.env_params
+
+    @staticmethod
+    def find_intersection(x1, y1, m1, x2, y2, m2):
+        x = (y2 - m2 * x2 - y1 + m1 * x1) / (m1 - m2)
+        y = y1 + m1 * (x - x1)
+        return x, y
+
+    @staticmethod
+    def find_other_vertices(x1, y1, x3, y3, m1, m2):
+        x2, y2 = HysteresisCurve.find_intersection(x1, y1, m2, x3, y3, m1)
+        x4, y4 = HysteresisCurve.find_intersection(x1, y1, m1, x3, y3, m2)
+        return (x2, y2), (x4, y4)
+
+    @staticmethod
+    def _hysteresis_polygons(d_u, f_u, d_r, f_r, m1):
+        ind = d_r < d_u[0]
+        d_r = d_r[ind]
+        f_r = f_r[ind]
+        ucl = LineString(zip(d_u, f_u))
+        rcl = LineString(zip(d_r, f_r))
+        intersection = rcl.intersection(ucl)
+        if intersection.geom_type == 'Point':
+            d_r = np.concatenate((d_r, np.array([d_u[0]])))
+            f_r = np.concatenate((f_r, np.array([f_u[0]])))
+            ucl = LineString(zip(d_u, f_u))
+            rcl = LineString(zip(d_r, f_r))
+            intersection = rcl.intersection(ucl)
+
+        x_points = sorted(list(intersection.geoms), key=lambda p: (p.coords[0][0], p.coords[0][1]))
+        if len(x_points) > 2:
+            x_points = [x_points[0], x_points[-1]]
+        other_points = HysteresisCurve.find_other_vertices(*x_points[0].coords[0], *x_points[1].coords[0], m1, 0.)
+        epp_poly = Polygon(
+            (x_points[0].coords[0], other_points[0], x_points[1].coords[0], other_points[1], x_points[0].coords[0]))
+
+        idx_u = [np.argmin(np.linalg.norm(np.column_stack((d_u, f_u)) - point.coords[0], axis=1)) for point in x_points]
+        idx_r = [np.argmin(np.linalg.norm(np.column_stack((d_r, f_r)) - point.coords[0], axis=1)) for point in x_points]
+
+        for itr in range(len(x_points)):
+            d_u[idx_u[itr]] = x_points[itr].coords[0][0]
+            f_u[idx_u[itr]] = x_points[itr].coords[0][1]
+
+            d_r[idx_r[itr]] = x_points[itr].coords[0][0]
+            f_r[idx_r[itr]] = x_points[itr].coords[0][1]
+
+        d_u = d_u[min(idx_u):max(idx_u) + 1]
+        f_u = f_u[min(idx_u):max(idx_u) + 1]
+
+        d_r = d_r[min(idx_r):max(idx_r) + 1]
+        f_r = f_r[min(idx_r):max(idx_r) + 1]
+
+        seg1 = np.column_stack((d_u, f_u))
+        seg2 = np.column_stack((d_r[1:], f_r[1:]))
+        try:
+            hyst_poly = Polygon(np.concatenate((seg1, seg2)))
+        except ValueError:
+            hyst_poly = Polygon()
+        return hyst_poly, epp_poly
 
 
 if __name__ == "__main__":
