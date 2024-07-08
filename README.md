@@ -51,7 +51,7 @@ You will need to provide a `prominence` value for the `HysteresisCurve` to avoid
 ```python
 curve.see_peaks_and_valleys(prominence=0.55)
 ```
-![Hysteresis Curve Analysis](https://github.com/adeb-deg/hysteresis-curve/blob/main/README_figures/PeaksAndValleys.PNG)
+![Hysteresis Curve Analysis](https://github.com/adeb-deg/hysteresis-curve/blob/main/README_figures/PeaksAndValleys.png)
 
 Then set the prominence attribute of the `HysteresisCurve` object to the desired value
 
