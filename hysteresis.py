@@ -23,6 +23,52 @@ def display_ticks(ax):
     return ax
 
 
+def sync_axes(axs, **kwargs):
+    x = kwargs.get("x", True)
+    y = kwargs.get("y", True)
+    z = kwargs.get("z", True)
+
+    """
+    Synchronize the x and y-axis limits across a list of axes.
+
+    :param axs: List of matplotlib axes objects.
+    """
+    xmin, xmax, ymin, ymax = float('inf'), float('-inf'), float('inf'), float('-inf')
+    zmin = float('inf')
+    zmax = float('-inf')
+
+    # Find the global min and max limits
+    for ax in axs:
+        xlimits = ax.get_xlim()
+        ylimits = ax.get_ylim()
+
+        try:
+            zlimits = ax.get_zlim()
+        except AttributeError:
+            zlimits = None
+
+        xmin = min(xmin, xlimits[0])
+        xmax = max(xmax, xlimits[1])
+        ymin = min(ymin, ylimits[0])
+        ymax = max(ymax, ylimits[1])
+
+        if zlimits is not None:
+            zmin = min(zmin, zlimits[0])
+            zmax = max(zmax, zlimits[1])
+
+    # Set global limits to all axes
+    for ax in axs:
+        if x:
+            ax.set_xlim([xmin, xmax])
+        if y:
+            ax.set_ylim([ymin, ymax])
+        try:
+            if z:
+                ax.set_zlim([zmin, zmax])
+        except AttributeError:
+            pass
+
+
 def create_uniform_dist(number, scale_factor=0.2):
     """
     - scale_factor (float, optional): The proportion of the number to determine the magnitude of variability. Defaults to 0.2.
@@ -55,6 +101,12 @@ def piecewise_linear(x, *params):
 
 
 def resample_array(original_array, m):
+    """
+
+    :param original_array:
+    :param m: number of points in resampled array
+    :return:
+    """
     n = len(original_array)
     # Check if m is smaller than n
     if m > n:
@@ -67,13 +119,60 @@ def resample_array(original_array, m):
 
 
 class HysteresisCurve:
-    def __init__(self, d, f, labels=('D', 'F')):
+    def __init__(self, d, f, n_seg_env, **kwargs):
+        """
+        :param d: displacement history (positive is assumed direction of loading, and first cycle will be unloading, then loading)
+        :param f: force history
+        :param n_seg_env: number of piecewise linear segments in positive f-d envelope
+        :param kwargs:
+        """
+        self.labels = kwargs.get("labels", ('D', 'F'))
+        self.prominence = kwargs.get("prominence", None)
         self.d = np.array(d)
         self.f = np.array(f)
-        self.labels = labels
-        self.signal_width = np.max(self.d) - np.min(self.d)
+        self.n_seg_env = n_seg_env
+        self.env_params = None
+
+        d_m = []
+        f_m = []
+        max_d = 0.
+        for i, _d in enumerate(self.d):
+            if _d >= max_d:
+                d_m.append(_d)
+                f_m.append(self.f[i])
+                max_d = _d
+        self.d_m = np.array(d_m)
+        self.f_m = np.array(f_m)
+
+    def find_peaks_and_valleys(self, prominence=None):
+        if prominence is None:
+            prominence = self.prominence
+        peaks, _ = find_peaks(self.d, prominence=prominence)
+        valleys, _ = find_peaks(-self.d, prominence=prominence)
+        valleys = valleys[valleys > peaks[0]]
+        return peaks, valleys
+
+    def see_peaks_and_valleys(self, prominence):
+        peaks, valleys = self.find_peaks_and_valleys(prominence)
+        fig, axs = plt.subplots(2, 1, sharex="all", sharey="all", constrained_layout=True)
+        steps = np.arange(len(self.d))
+        axs[0].plot(steps, self.d, 'b-')
+        axs[1].plot(steps, self.d, 'b-')
+        axs[0].plot(steps[peaks], self.d[peaks], 'r^')
+        axs[1].plot(steps[valleys], self.d[valleys], 'rv')
+        for ax in axs:
+            display_ticks(ax)
+        fig.supxlabel("Step number")
+        fig.supylabel(self.labels[0])
+        axs[0].set_title("Peaks")
+        axs[1].set_title("Valleys")
 
     def resample(self, n):
+        """
+
+        :param n: number of points in each unloading/reloading branch (Total number of points in 1 cycle = 2 * n)
+        :return:
+        """
         ubs = self.unloading_branches()
         rbs = self.reloading_branches()
         if len(ubs) > 0:
@@ -87,30 +186,17 @@ class HysteresisCurve:
             d.extend(resample_array(self.d[rbs[i][0]:rbs[i][1]], n))
             f.extend(resample_array(self.f[ubs[i][0]:ubs[i][1]], n))
             f.extend(resample_array(self.f[rbs[i][0]:rbs[i][1]], n))
-        return HysteresisCurve(np.array(d), np.array(f))
+        return HysteresisCurve(np.array(d), np.array(f), self.n_seg_env)
 
     def get_init_slope_estimate(self):
-        unique_indices = np.concatenate(([True], np.diff(self.d) != 0))
-        unique_d = self.d[unique_indices]
-        unique_f = self.f[unique_indices]
-        m = np.diff(unique_f) / np.diff(unique_d)
-        m1 = m[0]
-        for i in range(1, len(m)):
-            m1 = np.mean(m[:i])
-            if np.abs(m[i] - m1) / m1 < 0.001:
-                continue
-            else:
-                break
-        return m1
+        return self.get_env_params()[self.n_seg_env - 1]
 
     def unloading_branches(self):
-        peaks, _ = find_peaks(self.d)
-        valleys, _ = find_peaks(-self.d)
+        peaks, valleys = self.find_peaks_and_valleys()
         return list(zip(peaks, valleys))
 
     def reloading_branches(self):
-        peaks, _ = find_peaks(self.d)
-        valleys, _ = find_peaks(-self.d)
+        peaks, valleys = self.find_peaks_and_valleys()
         peaks = peaks[1:]
         if len(peaks) == len(valleys) - 1:
             ub = self.unloading_branches()
@@ -122,8 +208,9 @@ class HysteresisCurve:
         u_branches = self.unloading_branches()
         r_branches = self.reloading_branches()
         cycles = len(u_branches)
-        # m1 = (np.diff(self.f) / np.diff(self.d))[0]
         m1 = self.get_init_slope_estimate()
+        env_params = self.get_env_params()
+        yield_pt = env_params[0]
         polygons = []
         for cycle in range(cycles):
             u_branch = u_branches[cycle]
@@ -132,7 +219,10 @@ class HysteresisCurve:
             d_u = self.d[u_branch[0]:u_branch[1] + 1].copy()
             f_r = self.f[r_branch[0]:r_branch[1] + 1].copy()
             d_r = self.d[r_branch[0]:r_branch[1] + 1].copy()
-            polygons.append(HysteresisCurve._hysteresis_polygons(d_u, f_u, d_r, f_r, m1))
+            if abs(d_u[0]) < yield_pt and abs(d_u[-1]) < yield_pt:
+                polygons.append((Polygon(), Polygon()))
+            else:
+                polygons.append(HysteresisCurve._hysteresis_polygons(d_u, f_u, d_r, f_r, m1))
         return polygons
 
     def edr(self):
@@ -148,33 +238,33 @@ class HysteresisCurve:
         return np.array(edr)
 
     def plot(self, plot_cycle_num=None, **kwargs):
-        fig_axs = kwargs.get('fig_axs', None)
+        axs = kwargs.get('axs', None)
         color = kwargs.get('color', 'b')
         plot_env = kwargs.get('plot_env', False)
-        env_params = kwargs.get('env_params', None)
-
-        if plot_env and env_params is None:
-            raise ValueError("env_params can't be None if plot_env is True")
 
         alpha = 0.7
         if isinstance(color, str):
             color = colors.to_rgba(color)[:-1]
 
-        if fig_axs is None:
-            fig, axs = plt.subplots(1, 2, figsize=(6.83 * 2, 7.85 / 2), constrained_layout=True)
-        else:
-            fig, axs = fig_axs
+        if axs is None:
+            _, ax0 = plt.subplots(1, 1, constrained_layout=True)
+            _, ax1 = plt.subplots(1, 1, constrained_layout=True)
+            if plot_cycle_num is not None:
+                _, ax2 = plt.subplots(1, 1, constrained_layout=True)
+                axs = [ax0, ax1, ax2]
+            else:
+                axs = [ax0, ax1]
         axs[0].plot(self.d, self.f, '-', color=color + (alpha,))
 
         edr = self.edr()
         cycles = np.arange(0, len(edr))
         if len(cycles) > 0:
-            ml, sl, bl = axs[-1].stem(cycles, edr)
+            ml, sl, bl = axs[1].stem(cycles, edr)
             ml.set_markeredgecolor("none")
             ml.set_markerfacecolor(color + (alpha,))
             sl.set_color(color + (alpha,))
             bl.set_color(color + (alpha,))
-            axs[-1].set_ylim(-0.1, np.maximum(1., 1.1 * np.max(edr)))
+            axs[1].set_ylim(-0.1, np.maximum(1., 1.1 * np.max(edr)))
 
         if plot_cycle_num is not None:
             if np.isscalar(plot_cycle_num):
@@ -190,11 +280,7 @@ class HysteresisCurve:
                                              edgecolor='k', alpha=0.5)
                     axs[0].add_patch(hyst_polygon)
                     axs[0].add_patch(epp_polygon)
-                    # ub = self.unloading_branches()
-                    # rb = self.reloading_branches()
-                    # axs[1].plot(np.arange(*ub[plot_cycle_num]), self.d[ub[plot_cycle_num][0]:ub[plot_cycle_num][1]], 'r')
-                    # axs[1].plot(np.arange(*rb[plot_cycle_num]), self.d[rb[plot_cycle_num][0]:rb[plot_cycle_num][1]], 'r')
-                    ml, sl, bl = axs[-1].stem(cycles[plot_cycle_num], [edr[plot_cycle_num]])
+                    ml, sl, bl = axs[1].stem(cycles[plot_cycle_num], [edr[plot_cycle_num]])
                     ml.set_markeredgecolor("none")
                     ml.set_markerfacecolor(color + (1.,))
                     ml.set_marker('*')
@@ -202,28 +288,48 @@ class HysteresisCurve:
                     sl.set_color(color + (1.,))
                     bl.set_color(color + (1.,))
 
+                    hyst_polygon = mplPolygon(np.array(polygons[plot_cycle_num][0].exterior.coords), closed=True,
+                                              facecolor='red',
+                                              edgecolor=color, alpha=0.25)
+                    epp_polygon = mplPolygon(np.array(polygons[plot_cycle_num][1].exterior.coords), closed=True,
+                                             facecolor='none',
+                                             edgecolor='k', alpha=0.5)
+                    axs[2].add_patch(hyst_polygon)
+                    axs[2].add_patch(epp_polygon)
                 except IndexError:
                     continue
 
         if plot_env:
-            d_e = np.linspace(min(self.d), max(self.d), 100)
-            f_e = piecewise_linear(d_e, *env_params)
+            d_e = np.linspace(min(self.d_m), max(self.d_m), 100)
+            f_e = piecewise_linear(d_e, *self.get_env_params())
             axs[0].plot(d_e, f_e, 'k--')
+            axs[0].plot(-d_e, -f_e, 'k--')
+            if plot_cycle_num:
+                axs[2].plot(d_e, f_e, 'k--')
+                axs[2].plot(-d_e, -f_e, 'k--')
 
         display_ticks(axs[0])
-        # display_ticks(axs[1])
-        display_ticks(axs[-1])
+        display_ticks(axs[1])
+        if plot_cycle_num:
+            display_ticks(axs[2])
 
         axs[0].set_xlabel(self.labels[0])
         axs[0].set_ylabel(self.labels[1])
 
-        # axs[1].set_xlabel('step')
-        # axs[1].set_ylabel('D')
+        axs[1].set_xlabel('cycle')
+        axs[1].set_ylabel('EDR')
 
-        axs[-1].set_xlabel('cycle')
-        axs[-1].set_ylabel('EDR')
+        if plot_cycle_num:
+            axs[2].set_xlabel(self.labels[0])
+            axs[2].set_ylabel(self.labels[1])
 
-        return fig, axs
+        abs_xlim = max(abs(np.array(axs[0].get_xlim())))
+        abs_ylim = max(abs(np.array(axs[0].get_ylim())))
+        axs[0].set_xlim((-abs_xlim, abs_xlim))
+        axs[0].set_ylim((-abs_ylim, abs_ylim))
+        if plot_cycle_num:
+            sync_axes([axs[0], axs[2]])
+        return axs
 
     @staticmethod
     def find_intersection(x1, y1, m1, x2, y2, m2):
@@ -263,17 +369,19 @@ class HysteresisCurve:
         ind = d_r < d_u[0]
         d_r = d_r[ind]
         f_r = f_r[ind]
-        d_r = np.concatenate((d_r, np.array([d_u[0]])))
-        f_r = np.concatenate((f_r, np.array([f_u[0]])))
         ucl = LineString(zip(d_u, f_u))
         rcl = LineString(zip(d_r, f_r))
         intersection = rcl.intersection(ucl)
         if intersection.geom_type == 'Point':
-            return Polygon(), Polygon()
-        else:
-            x_points = sorted(list(intersection.geoms), key=lambda p: (p.coords[0][0], p.coords[0][1]))
-            if len(x_points) > 2:
-                x_points = [x_points[0], x_points[-1]]
+            d_r = np.concatenate((d_r, np.array([d_u[0]])))
+            f_r = np.concatenate((f_r, np.array([f_u[0]])))
+            ucl = LineString(zip(d_u, f_u))
+            rcl = LineString(zip(d_r, f_r))
+            intersection = rcl.intersection(ucl)
+
+        x_points = sorted(list(intersection.geoms), key=lambda p: (p.coords[0][0], p.coords[0][1]))
+        if len(x_points) > 2:
+            x_points = [x_points[0], x_points[-1]]
         other_points = HysteresisCurve.find_other_vertices(*x_points[0].coords[0], *x_points[1].coords[0], m1, 0.)
         epp_poly = Polygon(
             (x_points[0].coords[0], other_points[0], x_points[1].coords[0], other_points[1], x_points[0].coords[0]))
@@ -302,57 +410,53 @@ class HysteresisCurve:
             hyst_poly = Polygon()
         return hyst_poly, epp_poly
 
-    def fit_piecewise_linear_envelope(self):
+    def get_env_params(self):
         """
         Recommended for monotonic force-deformation
         """
-        x_data, y_data = self.d, self.f
+        if self.env_params is None:
+            x_data, y_data = self.d_m, self.f_m
 
-        prf = piecewise_regression.Fit(list(x_data), list(y_data), n_breakpoints=3)
-        est = prf.get_results()['estimates']
-        bp1 = est['breakpoint1']['estimate']
-        bp2 = est['breakpoint2']['estimate']
-        bp3 = est['breakpoint3']['estimate']
+            def fun(p):
+                return np.sum((y_data - piecewise_linear(x_data, *p)) ** 2)
 
-        # lin_ind = self.d_e < bp1
-        hard_ind = (x_data > bp1) & (x_data < bp2)
-        deg_ind = (x_data > bp2) & (x_data < bp3)
-        res_ind = x_data > bp3
+            n_breakpoints = self.n_seg_env - 1
+            prf = piecewise_regression.Fit(list(x_data), list(y_data), n_breakpoints=n_breakpoints)
+            est = prf.get_results()['estimates']
+            bps = []
+            for i in range(1, n_breakpoints + 1):
+                bps.append(est[f'breakpoint{i}']['estimate'])
 
-        def fun(p):
-            return np.sum((y_data - piecewise_linear(x_data, *p)) ** 2)
+            inds = []
 
-        k0 = self.get_init_slope_estimate()
-        k1 = np.polyfit(x_data[hard_ind], y_data[hard_ind], 1)[0]
-        k2 = np.polyfit(x_data[deg_ind], y_data[deg_ind], 1)[0]
-        k3 = np.polyfit(x_data[res_ind], y_data[res_ind], 1)[0]
+            for i in range(len(bps) + 1):
+                if i == 0:
+                    inds.append(x_data < bps[i])
+                elif i == len(bps):
+                    inds.append(x_data > bps[i - 1])
+                else:
+                    inds.append((x_data > bps[i - 1]) & (x_data < bps[i]))
 
-        dists = [
-            create_uniform_dist(bp1),
-            create_uniform_dist(bp2),
-            create_uniform_dist(bp3),
-            create_uniform_dist(k0),
-            create_uniform_dist(k1),
-            create_uniform_dist(k2),
-            create_uniform_dist(k3),
-        ]
+            ks = []
+            for ind in inds:
+                ks.append(np.polyfit(x_data[ind], y_data[ind], 1)[0])
 
-        p0s = np.array([dist.rvs(10, random_state=311) for dist in dists]).T
+            dists = [create_uniform_dist(item) for item in bps + ks]
+            p0s = np.array([dist.rvs(10, random_state=311) for dist in dists]).T
 
-        # p0s = p0s[(p0s[:, 1] > p0s[:, 0]) & (p0s[:, 2] > p0s[:, 3])]
-
-        res_list = []
-        p_list = []
-        for p0 in p0s:
-            temp = minimize(
-                fun, x0=p0,
-                bounds=[
-                    u.support() for u in dists
-                ],
-            )
-            res_list.append(temp.fun)
-            p_list.append(temp.x)
-        return p_list[np.argmin(res_list)]
+            res_list = []
+            p_list = []
+            for p0 in p0s:
+                temp = minimize(
+                    fun, x0=p0,
+                    bounds=[
+                        u.support() for u in dists
+                    ],
+                )
+                res_list.append(temp.fun)
+                p_list.append(temp.x)
+            self.env_params = p_list[np.argmin(res_list)]
+        return self.env_params
 
 
 if __name__ == "__main__":
@@ -406,5 +510,13 @@ if __name__ == "__main__":
          6.40894677e+00, 3.20048337e+01, 5.80810806e+01, 7.00278994e+01,
          7.77646937e+01, 7.95243929e+01]
     )
-    hc = HysteresisCurve(d_vals, f_vals)
-    hc.plot(-1)
+    # fd = np.loadtxt("InputForceDisp.txt", delimiter=',')
+
+    curve = HysteresisCurve(d_vals, f_vals, n_seg_env=2)
+
+    # first use hc.see_peaks_and_valleys(prominence=p) for different values of p to determine the adequate prominence
+    curve.see_peaks_and_valleys(prominence=0.55)
+    # then set
+    curve.prominence = 0.55
+    curve.plot()
+    curve.plot([2, 3], plot_env=False)
