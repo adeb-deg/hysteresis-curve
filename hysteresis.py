@@ -491,11 +491,20 @@ if __name__ == "__main__":
     )
     # fd = np.loadtxt("InputForceDisp.txt", delimiter=',')
 
-    curve = HysteresisCurve(d_vals, f_vals, n_seg_env=2)
+    fd = []
+    with open("InputForceDisp (2).txt", "r") as f:
+        lines = f.readlines()
+    for line in lines:
+        temp = line.strip().split(' ')
+        temp = [float(item) for item in temp if len(item)]
+        fd.append(temp)
+    fd = np.array(fd)
+
+    curve = HysteresisCurve(fd[:, 0], fd[:, 1], n_seg_env=4)
 
     # first use hc.see_peaks_and_valleys(prominence=p) for different values of p to determine the adequate prominence
     curve.see_peaks_and_valleys(prominence=0.55)
     # then set
     curve.prominence = 0.55
     curve.plot()
-    curve.plot([2, 3], plot_env=False)
+    curve.plot([20, 21], plot_env=True)
